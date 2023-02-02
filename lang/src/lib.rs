@@ -204,6 +204,53 @@ impl CostModel {
         // Convert to an in-range value
         fract_to_cost(result).map_err(|()| CostError::CostModelFail)
     }
+
+    pub fn cost_with_details(&self, query: &str, variables: &str) -> Result<Vec<(&Statement,BigUint)>, CostError> {
+        profile_method!(cost);
+
+        let mut context: Context<&str> = Context::new(query, variables)?;
+
+        let mut result = Vec::new();
+
+        for operation in context.operations.iter() {
+            profile_section!(operation_definition);
+
+            // TODO: (Performance) We could move the search for top level fields
+            // into the Context. But, then it would have to be self-referential
+            let top_level_fields =
+                get_top_level_fields(operation, &context.fragments, &context.variables)?;
+
+            for top_level_field in top_level_fields.into_iter() {
+                profile_section!(operation_field);
+
+                for statement in &self.document().statements {
+                    profile_section!(field_statement);
+
+                    match statement.try_cost(
+                        &top_level_field,
+                        &context.fragments,
+                        &context.variables,
+                        &mut context.captures,
+                    ) {
+                        Ok(None) => continue,
+                        Ok(Some(cost)) => {
+                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?; 
+                            result.push((statement,c));
+                            break;
+                        }
+                        Err(_) => return Err(CostError::CostModelFail),
+                    }
+                }
+
+            }
+        }
+
+        Ok(result)
+
+    }
+
+
+
 }
 pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
     profile_fn!(fract_to_cost);
