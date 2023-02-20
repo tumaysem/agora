@@ -562,7 +562,7 @@ fn predicate(input: &str) -> IResult<&str, Predicate> {
 fn statement(input: &str) -> IResult<&str, Statement> {
     profile_fn!(statement);
 
-    with_context(ErrorContext::Statement, |input| {
+    with_context(ErrorContext::Statement, |input:&str| {
         // Start by dropping whitespace and comments.
         // A comment is allowed to preceed a statement.
         // This used to be handled in the GraphQL parser,
@@ -570,13 +570,17 @@ fn statement(input: &str) -> IResult<&str, Statement> {
         // Handling it here also allows us to do a query check in the
         // graphql parser which enables better error handling.
         let (input, _) = many0(alt((whitespace, recognize(pair(char('#'), is_not("\n"))))))(input)?;
+        let origin:&str = input.clone();
         let (input, predicate) = predicate(input)?;
         let (input, _) = tuple((tag("=>"), whitespace))(input)?;
         let (input, cost_expr) = linear_expression(input)?;
         let (input, _) = tag(";")(input)?;
+        let olen = origin.len() - input.len();
+        let origin = origin.get(0..olen).unwrap();
         let (input, _) = opt(whitespace)(input)?;
 
         let statement = Statement {
+            origin,
             predicate,
             cost_expr,
         };

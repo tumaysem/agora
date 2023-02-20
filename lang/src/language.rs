@@ -66,6 +66,7 @@ impl<'t> Document<'t> {
 
 #[derive(Debug, PartialEq)]
 pub struct Statement<'a> {
+    pub origin: &'a str,
     pub predicate: Predicate<'a>,
     pub cost_expr: LinearExpression,
 }
