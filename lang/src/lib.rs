@@ -36,8 +36,10 @@ pub struct CostModel {
 
 #[allow(dead_code)]
 pub struct CostDetail {
+    // Index of the operation (query).
+    index:usize,
     // Name of the query root such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
-    root_name:String,
+    root:String,
     // Cost model statement matched to calculate cost 
     statement:String,
     // Estimated cost from model
@@ -164,65 +166,22 @@ impl CostModel {
         self.cost_with_context(&mut context)
     }
 
-    /// This may be more efficient when costing a single query against multiple models
-    pub fn cost_with_context<'a, T: q::Text<'a>>(
-        &self,
-        context: &mut Context<'a, T>,
-    ) -> Result<BigUint, CostError> {
-        profile_method!(cost_with_context);
-
-        let mut result = BigFraction::from(0);
-
-        for operation in context.operations.iter() {
-            profile_section!(operation_definition);
-
-            // TODO: (Performance) We could move the search for top level fields
-            // into the Context. But, then it would have to be self-referential
-            let top_level_fields =
-                get_top_level_fields(operation, &context.fragments, &context.variables)?;
-
-            for top_level_field in top_level_fields.into_iter() {
-                profile_section!(operation_field);
-
-                let mut this_cost = None;
-
-                for statement in &self.document().statements {
-                    profile_section!(field_statement);
-
-                    match statement.try_cost(
-                        &top_level_field,
-                        &context.fragments,
-                        &context.variables,
-                        &mut context.captures,
-                    ) {
-                        Ok(None) => continue,
-                        Ok(cost) => {
-                            this_cost = cost;
-                            break;
-                        }
-                        Err(_) => return Err(CostError::CostModelFail),
-                    }
-                }
-                if let Some(this_cost) = this_cost {
-                    result += this_cost;
-                } else {
-                    return Err(CostError::QueryNotCosted);
-                }
-            }
-        }
-
-        // Convert to an in-range value
-        fract_to_cost(result).map_err(|()| CostError::CostModelFail)
-    }
-
-    pub fn cost_with_details(&self, query: &str, variables: &str) -> Result<Vec<CostDetail>, CostError> {
+    pub fn cost_detail(&self, query: &str, variables: &str) -> Result<Vec<CostDetail>, CostError> {
         profile_method!(cost);
 
         let mut context: Context<&str> = Context::new(query, variables)?;
+        self.cost_detail_with_context(&mut context)
+    }
+
+    pub fn cost_detail_with_context<'a, T: q::Text<'a>>(
+        &self,
+        context: &mut Context<'a, T>,
+    ) -> Result<Vec<CostDetail>,CostError> {
+        profile_method!(cost_detail_with_context);
 
         let mut result = Vec::new();
 
-        for operation in context.operations.iter() {
+        for (index, operation) in context.operations.iter().enumerate() {
             profile_section!(operation_definition);
 
             // TODO: (Performance) We could move the search for top level fields
@@ -233,9 +192,11 @@ impl CostModel {
             for top_level_field in top_level_fields.into_iter() {
                 profile_section!(operation_field);
 
+                let mut item = None;
+
                 for statement in &self.document().statements {
                     profile_section!(field_statement);
-
+        
                     match statement.try_cost(
                         &top_level_field,
                         &context.fragments,
@@ -244,20 +205,50 @@ impl CostModel {
                     ) {
                         Ok(None) => continue,
                         Ok(Some(cost)) => {
-                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?;                            
-                            result.push(CostDetail { root_name: top_level_field.name.to_owned(), statement: statement.origin.to_owned() , amount: c });
-                            break;
+                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?; 
+                            item = Some(CostDetail { 
+                                index: index,
+                                root: AsRef::as_ref(&top_level_field.name).to_owned(), 
+                                statement: statement.origin.to_owned() , 
+                                amount: c 
+                            });
+                            break;        
                         }
                         Err(_) => return Err(CostError::CostModelFail),
                     }
+                }
+                
+                match item {
+                    Some(detail) => result.push(detail),
+                    None => return Err(CostError::QueryNotCosted),
                 }
 
             }
         }
 
-        Ok(result)
+        Ok(result)    
 
     }
+
+
+
+    /// This may be more efficient when costing a single query against multiple models
+    pub fn cost_with_context<'a, T: q::Text<'a>>
+    (
+        &self,
+        context: &mut Context<'a, T>,
+    ) -> Result<BigUint, CostError> {
+        profile_method!(cost_with_context);
+
+        let detail = self.cost_detail_with_context(context)?;
+
+        let result = detail.into_iter().map(|detail| detail.amount).sum();
+
+        Ok(result)
+        
+    }
+
+    
 
 
 

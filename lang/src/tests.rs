@@ -113,7 +113,7 @@ fn sums_top_levels() {
 }
 
 #[test]
-fn cost_with_details() {
+fn cost_detail() {
     let model = "
         query { a(skip: $skip) } => $skip;
         query { b(bob: $bob) } => 10;
@@ -122,21 +122,28 @@ fn cost_with_details() {
         query { d } => 1;
     ";
 
-    let query = "query { a(skip: 10), b(bob: 5) }";
+    let query = "query { a(skip: 10), b(bob: 5) } query { c { id } }";
 
     let model = IntoModel::into(model);
     let (query, variables) = IntoQuery::into(query);
-    let cost = model.cost_with_details(query, variables).unwrap();
+    let cost = model.cost_detail(query, variables).unwrap();
     
-    assert_eq!(cost.len(),2);
+    assert_eq!(cost.len(),3);
     
-    assert_eq!(cost[0].root_name,"a");
+    assert_eq!(cost[0].index,0);
+    assert_eq!(cost[0].root,"a");
     assert_eq!(cost[0].statement,"query { a(skip: $skip) } => $skip;");
     assert_eq!(cost[0].amount,IntoTestResult::into(10).unwrap());
     
-    assert_eq!(cost[1].root_name,"b");
+    assert_eq!(cost[1].index,0);
+    assert_eq!(cost[1].root,"b");
     assert_eq!(cost[1].statement,"query { b(bob: $bob) } => 10;");
     assert_eq!(cost[1].amount,IntoTestResult::into(10).unwrap());
+
+    assert_eq!(cost[2].index,1);
+    assert_eq!(cost[2].root,"c");
+    assert_eq!(cost[2].statement,"query { c } => 9;");
+    assert_eq!(cost[2].amount,IntoTestResult::into(9).unwrap());
 
 }
 
