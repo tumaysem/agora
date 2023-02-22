@@ -38,8 +38,8 @@ pub struct CostModel {
 pub struct CostDetail {
     // Index of the operation (query).
     index:usize,
-    // Name of the query root such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
-    root:String,
+    // Name of the top field in a query such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
+    top_field:String,
     // Cost model statement matched to calculate cost 
     statement:String,
     // Estimated cost from model
@@ -208,7 +208,7 @@ impl CostModel {
                             let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?; 
                             item = Some(CostDetail { 
                                 index: index,
-                                root: AsRef::as_ref(&top_level_field.name).to_owned(), 
+                                top_field: AsRef::as_ref(&top_level_field.name).to_owned(), 
                                 statement: statement.origin.to_owned() , 
                                 amount: c 
                             });
