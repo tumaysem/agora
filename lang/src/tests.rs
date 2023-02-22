@@ -113,6 +113,35 @@ fn sums_top_levels() {
 }
 
 #[test]
+fn cost_with_details() {
+    let model = "
+        query { a(skip: $skip) } => $skip;
+        query { b(bob: $bob) } => 10;
+        query { c } => 9;
+        query { a } => 99;
+        query { d } => 1;
+    ";
+
+    let query = "query { a(skip: 10), b(bob: 5) }";
+
+    let model = IntoModel::into(model);
+    let (query, variables) = IntoQuery::into(query);
+    let cost = model.cost_with_details(query, variables).unwrap();
+    
+    assert_eq!(cost.len(),2);
+    
+    assert_eq!(cost[0].root_name,"a");
+    assert_eq!(cost[0].statement,"query { a(skip: $skip) } => $skip;");
+    assert_eq!(cost[0].amount,IntoTestResult::into(10).unwrap());
+    
+    assert_eq!(cost[1].root_name,"b");
+    assert_eq!(cost[1].statement,"query { b(bob: $bob) } => 10;");
+    assert_eq!(cost[1].amount,IntoTestResult::into(10).unwrap());
+
+}
+
+
+#[test]
 fn var_substitutions() {
     let query = "query pairs($skip: Int!) { pairs(skip: $skip) { id } }";
     let variables = "{\"skip\":1}";

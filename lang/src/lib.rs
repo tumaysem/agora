@@ -34,6 +34,16 @@ pub struct CostModel {
     text: String,
 }
 
+#[allow(dead_code)]
+pub struct CostDetail {
+    // Name of the query root such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
+    root_name:String,
+    // Cost model statement matched to calculate cost 
+    statement:String,
+    // Estimated cost from model
+    amount:BigUint,
+}
+
 unsafe impl Send for CostModel {}
 unsafe impl Sync for CostModel {}
 
@@ -205,7 +215,7 @@ impl CostModel {
         fract_to_cost(result).map_err(|()| CostError::CostModelFail)
     }
 
-    pub fn cost_with_details(&self, query: &str, variables: &str) -> Result<Vec<(&Statement,BigUint)>, CostError> {
+    pub fn cost_with_details(&self, query: &str, variables: &str) -> Result<Vec<CostDetail>, CostError> {
         profile_method!(cost);
 
         let mut context: Context<&str> = Context::new(query, variables)?;
@@ -234,8 +244,8 @@ impl CostModel {
                     ) {
                         Ok(None) => continue,
                         Ok(Some(cost)) => {
-                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?; 
-                            result.push((statement,c));
+                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?;                            
+                            result.push(CostDetail { root_name: top_level_field.name.to_owned(), statement: statement.origin.to_owned() , amount: c });
                             break;
                         }
                         Err(_) => return Err(CostError::CostModelFail),
