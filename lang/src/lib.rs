@@ -37,13 +37,13 @@ pub struct CostModel {
 #[allow(dead_code)]
 pub struct CostDetail {
     // Index of the operation (query).
-    index:usize,
+    pub index:usize,
     // Name of the top field in a query such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
-    top_field:String,
+    pub top_field:String,
     // Cost model statement matched to calculate cost 
-    statement:String,
+    pub statement:String,
     // Estimated cost from model
-    amount:BigUint,
+    pub amount:BigUint,
 }
 
 unsafe impl Send for CostModel {}
@@ -230,8 +230,6 @@ impl CostModel {
 
     }
 
-
-
     /// This may be more efficient when costing a single query against multiple models
     pub fn cost_with_context<'a, T: q::Text<'a>>
     (
@@ -247,10 +245,6 @@ impl CostModel {
         Ok(result)
         
     }
-
-    
-
-
 
 }
 pub fn fract_to_cost(fract: BigFraction) -> Result<BigUint, ()> {
