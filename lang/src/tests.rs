@@ -130,18 +130,15 @@ fn cost_detail() {
     
     assert_eq!(cost.len(),3);
     
-    assert_eq!(cost[0].index,0);
-    assert_eq!(cost[0].top_field,"a");
+    assert_eq!(cost[0].query_part,"query[0] { a }");
     assert_eq!(cost[0].statement,"query { a(skip: $skip) } => $skip;");
     assert_eq!(cost[0].amount,IntoTestResult::into(10).unwrap());
     
-    assert_eq!(cost[1].index,0);
-    assert_eq!(cost[1].top_field,"b");
+    assert_eq!(cost[1].query_part,"query[0] { b }");
     assert_eq!(cost[1].statement,"query { b(bob: $bob) } => 10;");
     assert_eq!(cost[1].amount,IntoTestResult::into(10).unwrap());
 
-    assert_eq!(cost[2].index,1);
-    assert_eq!(cost[2].top_field,"c");
+    assert_eq!(cost[2].query_part,"query[1] { c }");
     assert_eq!(cost[2].statement,"query { c } => 9;");
     assert_eq!(cost[2].amount,IntoTestResult::into(9).unwrap());
 

@@ -16,9 +16,11 @@ use prelude::*;
 use fraction::{BigFraction, GenericFraction, Sign};
 use language::*;
 use num_bigint::BigUint;
+use std::iter::Sum;
 use std::{error, fmt};
 use toolshed::graphql::graphql_parser::query as q;
 use toolshed::graphql::QueryVariables;
+use std::fmt::Display;
 
 pub use context::Context;
 
@@ -35,15 +37,39 @@ pub struct CostModel {
 }
 
 #[allow(dead_code)]
-pub struct CostDetail {
-    // Index of the operation (query).
-    pub index:usize,
+pub struct CostDetail<T> where T : Sum::<T> + Display + Clone {
     // Name of the top field in a query such as 'a' in 'query { a(skip: 10), b(bob: 5) }'
-    pub top_field:String,
+    pub query_part:String,
     // Cost model statement matched to calculate cost 
     pub statement:String,
     // Estimated cost from model
-    pub amount:BigUint,
+    pub amount:T,
+}
+
+impl<T> CostDetail<T> where T:Sum::<T> + Display + Clone  {
+    
+    pub fn transform<U>(self,f:fn (T) -> U) -> CostDetail<U> 
+    where U: Sum::<U> + Display + Clone 
+    {
+        CostDetail {
+            query_part : self.query_part,
+            statement: self.statement,
+            amount: f(self.amount)
+        }
+    } 
+}
+
+impl<T> fmt::Debug for CostDetail<T> where T: Sum::<T> + Display + Clone  {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "query:{0} & statement:{1} > price:{2}", self.query_part, self.statement,self.amount)
+    }
+}
+
+impl<T> std::clone::Clone for CostDetail<T> where T: Sum::<T> + Display + Clone {
+
+    fn clone(&self) -> Self {
+        Self { query_part: self.query_part.clone(), statement: self.statement.clone(), amount: self.amount.clone() }
+    }
 }
 
 unsafe impl Send for CostModel {}
@@ -166,7 +192,7 @@ impl CostModel {
         self.cost_with_context(&mut context)
     }
 
-    pub fn cost_detail(&self, query: &str, variables: &str) -> Result<Vec<CostDetail>, CostError> {
+    pub fn cost_detail(&self, query: &str, variables: &str) -> Result<Vec<CostDetail<BigUint>>, CostError> {
         profile_method!(cost);
 
         let mut context: Context<&str> = Context::new(query, variables)?;
@@ -176,7 +202,7 @@ impl CostModel {
     pub fn cost_detail_with_context<'a, T: q::Text<'a>>(
         &self,
         context: &mut Context<'a, T>,
-    ) -> Result<Vec<CostDetail>,CostError> {
+    ) -> Result<Vec<CostDetail<BigUint>>,CostError> {
         profile_method!(cost_detail_with_context);
 
         let mut result = Vec::new();
@@ -205,10 +231,9 @@ impl CostModel {
                     ) {
                         Ok(None) => continue,
                         Ok(Some(cost)) => {
-                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?; 
+                            let c = fract_to_cost(cost).map_err(|()| CostError::CostModelFail)?;
                             item = Some(CostDetail { 
-                                index: index,
-                                top_field: AsRef::as_ref(&top_level_field.name).to_owned(), 
+                                query_part: get_query_part_name(index, &operation, &top_level_field)?,
                                 statement: statement.origin.to_owned() , 
                                 amount: c 
                             });
@@ -396,6 +421,62 @@ fn get_top_level_fields<'a, 's, T: q::Text<'s>>(
 
     Ok(result)
 }
+
+/// Generates a unqiue string representation of each top field in a query operation
+/// 
+/// format: query[[query_index]]:[query_alias] { [top_field_name]:[top_field_alias] }
+/// 
+/// Though graphql servers do not support multiple query operations, agora cost models
+/// suppport while calculating the price. So to identify the query operation, we use 
+///  parsing order as a 0 based index. And If query operation or top field has an alias 
+/// it is appended as a suffix.
+fn get_query_part_name<'a, 's, T: q::Text<'s>>(
+    op_index:usize,
+    op: &'a q::OperationDefinition<'s, T>,
+    top_field: &'a q::Field<'s, T>,
+) -> Result<String, CostError> {
+    
+    profile_fn!(get_query_part_name);
+
+    let mut result = format!("query[{0}]",op_index);
+
+    match op {
+        q::OperationDefinition::Query(query) => {
+            if query.directives.len() != 0 {
+                return Err(CostError::QueryNotSupported);
+            }
+
+            match &query.name {
+                Some(name) => {
+                    result.push_str(" ");
+                    result.push_str(name.as_ref());
+                },
+                None => {},
+            }
+        },
+        q::OperationDefinition::SelectionSet(set) => {},
+        q::OperationDefinition::Mutation(_) | q::OperationDefinition::Subscription(_) => {
+            return Err(CostError::QueryNotSupported);
+        },
+    }
+
+    result.push_str(" { ");
+    result.push_str(top_field.name.as_ref());
+
+    match &top_field.alias {
+        Some(alias) => {
+            result.push_str(" ");
+            result.push_str(alias.as_ref());
+        },
+        None => {},
+    }
+
+    result.push_str(" }");
+
+    Ok(result)
+
+}
+
 
 #[derive(Debug)]
 pub struct RealParseError {
